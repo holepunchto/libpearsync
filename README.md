@@ -2,11 +2,11 @@
 
 Simple message passing between a libuv thread and something else.
 
-No locks.
-No allocs*
-No fuzz
+* No locks.
+* No allocs (*)
+* No fuzz
 
-__... unless you send > 1024 messages in one tick, at which stage an extra buffer is allocated__
+*... unless you send > 1024 messages in one tick, at which stage an extra buffer is allocated*
 
 ## Usage
 
