@@ -6,7 +6,7 @@ No locks.
 No allocs*
 No fuzz
 
-... unless you send > 1024 messages in one tick
+__... unless you send > 1024 messages in one tick, at which stage an extra buffer is allocated__
 
 ## Usage
 
