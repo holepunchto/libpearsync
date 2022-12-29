@@ -10,7 +10,7 @@ No fuzz
 
 ## Usage
 
-``` js
+``` c
 // somewhere (but only in one place), init it
 pearsync_t sync;
 pearsync_init(&sync);
