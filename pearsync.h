@@ -45,8 +45,8 @@ typedef struct {
   bool signal_thread;
 
   void (*on_signal_thread)(pearsync_port_t *);
-  void (*on_wakeup_uv)(void *);
-  void (*on_wakeup_thread)(void *);
+  void (*on_recv_uv)(void *);
+  void (*on_recv_thread)(void *);
 
   void (*on_close)(void *, size_t, pearsync_msg_t *, size_t, pearsync_msg_t *);
 } pearsync_t;
@@ -55,10 +55,10 @@ void
 pearsync_init (pearsync_t *self);
 
 pearsync_port_t *
-pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_wakeup)(pearsync_port_t *port));
+pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_recv)(pearsync_port_t *port));
 
 pearsync_port_t *
-pearsync_open_thread (pearsync_t *self, void (*on_signal_thread)(pearsync_port_t *port), void (*on_wakeup)(pearsync_port_t *port));
+pearsync_open_thread (pearsync_t *self, void (*on_signal_thread)(pearsync_port_t *port), void (*on_recv)(pearsync_port_t *port));
 
 pearsync_port_t *
 pearsync_get_port_uv (pearsync_t *self);

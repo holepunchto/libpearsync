@@ -18,10 +18,10 @@ pearsync_t sync;
 pearsync_init(&sync);
 
 // then pass it to the libuv thread somehow and call
-pearsync_port_t *uv_port = pearsync_open_uv(&sync, uv_loop, on_wakeup_uv);
+pearsync_port_t *uv_port = pearsync_open_uv(&sync, uv_loop, on_recv_uv);
 
 // then in the other thread call
-pearsync_port_t *port = pearsync_open_thread(&sync, signal_thread, on_wakeup);
+pearsync_port_t *port = pearsync_open_thread(&sync, signal_thread, on_recv_thread);
 
 // pearsync doesnt know how to signal your other thread, so you need to pass a function
 // signal_thread that does this for it, the signature of it is

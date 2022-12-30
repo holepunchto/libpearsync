@@ -4,8 +4,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+static uv_async_t thread_async;
+
 void
-on_wakeup_thread (pearsync_port_t *a) {
+on_recv_thread (pearsync_port_t *a) {
   printf("woke up thread...\n");
 
   pearsync_msg_t m;
@@ -15,7 +17,7 @@ on_wakeup_thread (pearsync_port_t *a) {
 }
 
 void
-on_wakeup_uv  (pearsync_port_t *a) {
+on_recv_uv  (pearsync_port_t *a) {
   printf("woke up main...\n");
 
   pearsync_msg_t m;
@@ -25,14 +27,30 @@ on_wakeup_uv  (pearsync_port_t *a) {
 }
 
 void
+on_thread_wakeup (uv_async_t *handle) {
+  pearsync_wakeup(handle->data);
+}
+
+void
+signal_thread (pearsync_port_t *port) {
+  uv_async_send(&thread_async);
+}
+
+void
 run_thread (void *data) {
   pearsync_t *a = (pearsync_t *) data;
 
-  printf("running on a thread...\n");
+  printf("running on a thread! (spinning up sep uv loop but could be anything...)\n");
 
-  pearsync_port_t *p = pearsync_open_thread(a, pearsync_wakeup, on_wakeup_thread);
+  uv_loop_t loop;
+  uv_loop_init(&loop);
 
-  for (int i = 0; i < 32; i++) {
+  uv_async_init(&loop, &thread_async, on_thread_wakeup);
+
+  pearsync_port_t *p = pearsync_open_thread(a, signal_thread, on_recv_thread);
+  thread_async.data = p;
+
+  for (int i = 0; i < 64; i++) {
     pearsync_msg_t m = {
       .len = 32,
       .data = malloc(32)
@@ -42,9 +60,6 @@ run_thread (void *data) {
 
     pearsync_send(p, &m);
   }
-
-  printf("thread is sleeping 2s and then sending 4 more\n");
-  sleep(2);
 
   for (int i = 0; i < 4; i++) {
     pearsync_msg_t m = {
@@ -56,6 +71,8 @@ run_thread (void *data) {
 
     pearsync_send(p, &m);
   }
+
+  uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 }
 
 int
@@ -63,7 +80,7 @@ main () {
   pearsync_t a;
   pearsync_init(&a);
 
-  pearsync_port_t *p = pearsync_open_uv(&a, uv_default_loop(), on_wakeup_uv);
+  pearsync_port_t *p = pearsync_open_uv(&a, uv_default_loop(), on_recv_uv);
 
   // uncomment to send to thread
 

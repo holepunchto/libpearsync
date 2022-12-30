@@ -146,7 +146,7 @@ pearsync_on_wakeup_uv (uv_async_t *handle) {
   pearsync_queue_t *mq = &(self->uv_queue);
   pearsync_queue_t *tq = &(self->thread_queue);
 
-  if (tq->tail != tq->head) self->on_wakeup_uv(&(self->uv_port));
+  if (tq->tail != tq->head) self->on_recv_uv(&(self->uv_port));
 
   PEARSYNC_DRAIN_OVERFLOW(self, mq, pearsync_uv_send, self->uv_status)
 
@@ -200,11 +200,11 @@ pearsync_get_port_uv (pearsync_t *self) {
 }
 
 pearsync_port_t *
-pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_wakeup)(pearsync_port_t *self)) {
+pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_recv)(pearsync_port_t *self)) {
   pearsync_queue_init(&(self->uv_queue));
   uv_async_init(loop, (uv_async_t *) self, pearsync_on_wakeup_uv);
 
-  self->on_wakeup_uv = (void (*)(void *)) on_wakeup;
+  self->on_recv_uv = (void (*)(void *)) on_recv;
   self->uv_status |= PEARSYNC_RECEIVING;
 
   if (self->thread_status & PEARSYNC_RECEIVING) {
@@ -221,11 +221,11 @@ pearsync_get_port_thread (pearsync_t *self) {
 }
 
 pearsync_port_t *
-pearsync_open_thread (pearsync_t *self, void (*on_signal_thread)(pearsync_port_t *self), void (*on_wakeup)(pearsync_port_t *self)) {
+pearsync_open_thread (pearsync_t *self, void (*on_signal_thread)(pearsync_port_t *self), void (*on_recv)(pearsync_port_t *self)) {
   pearsync_queue_init(&(self->thread_queue));
 
   self->on_signal_thread = on_signal_thread;
-  self->on_wakeup_thread = (void (*)(void *)) on_wakeup;
+  self->on_recv_thread = (void (*)(void *)) on_recv;
   self->thread_status |= PEARSYNC_RECEIVING;
 
   if (self->uv_status & PEARSYNC_RECEIVING) {
@@ -247,7 +247,7 @@ pearsync_wakeup (pearsync_port_t *port) {
   pearsync_queue_t *mq = &(self->uv_queue);
   pearsync_queue_t *tq = &(self->thread_queue);
 
-  if (mq->tail != mq->head) self->on_wakeup_thread(&(self->thread_port));
+  if (mq->tail != mq->head) self->on_recv_thread(&(self->thread_port));
 
   // on the "thread" thread, so drain!
   PEARSYNC_DRAIN_OVERFLOW(self, tq, pearsync_thread_send, self->thread_status)
