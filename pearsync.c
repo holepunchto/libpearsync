@@ -14,16 +14,15 @@
   while (q->overflow_tail != q->overflow_head && ((q->head + 1) & PEARSYNC_QUEUE_MASK) != q->tail) { \
     pearsync_msg_t tmp; \
     pearsync_overflow_shift(q, &tmp); \
-    status &= PEARSYNC_DRAINED; \
-    send(self, &tmp); \
-    if (q->overflow_tail != q->overflow_head) status |= PEARSYNC_NEEDS_DRAIN; \
+    send(self, &tmp, true); \
+    if (q->overflow_tail == q->overflow_head) status &= PEARSYNC_DRAINED; \
   }
 
 static bool
-pearsync_main_send (pearsync_t *self, pearsync_msg_t *m);
+pearsync_uv_send (pearsync_t *self, pearsync_msg_t *m, bool force);
 
 static bool
-pearsync_thread_send (pearsync_t *self, pearsync_msg_t *m);
+pearsync_thread_send (pearsync_t *self, pearsync_msg_t *m, bool force);
 
 static void
 pearsync_queue_init (pearsync_queue_t *q) {
@@ -92,10 +91,15 @@ pearsync_overflow_push (pearsync_queue_t *q, pearsync_msg_t *m) {
     pearsync_msg_t *old_overflow = q->overflow;
     pearsync_msg_t *new_overflow = q->overflow = malloc(q->overflow_size * sizeof(pearsync_msg_t));
 
+    int head = 0;
     while (q->overflow_tail != q->overflow_head) {
       *(new_overflow++) = *(old_overflow + q->overflow_tail);
       q->overflow_tail = (q->overflow_tail + 1) & mask;
+      head++;
     }
+
+    q->overflow_tail = 0;
+    q->overflow_head = head;
 
     if (old_overflow != NULL) free(old_overflow);
   }
@@ -139,12 +143,12 @@ static void
 pearsync_on_wakeup_uv (uv_async_t *handle) {
   pearsync_t *self = (pearsync_t *) handle;
 
-  pearsync_queue_t *mq = &(self->main_queue);
+  pearsync_queue_t *mq = &(self->uv_queue);
   pearsync_queue_t *tq = &(self->thread_queue);
 
-  if (tq->tail != tq->head) self->on_wakeup_main(&(self->main_port));
+  if (tq->tail != tq->head) self->on_wakeup_uv(&(self->uv_port));
 
-  PEARSYNC_DRAIN_OVERFLOW(self, mq, pearsync_main_send, self->main_status)
+  PEARSYNC_DRAIN_OVERFLOW(self, mq, pearsync_uv_send, self->uv_status)
 
   if (self->signal_thread) {
     self->signal_thread = false;
@@ -162,7 +166,7 @@ pearsync_on_close (uv_handle_t *handle) {
   pearsync_msg_t *thread_msgs;
   size_t thread_len;
 
-  pearsync_clear(&(self->main_queue), &main_len, &main_msgs);
+  pearsync_clear(&(self->uv_queue), &main_len, &main_msgs);
   pearsync_clear(&(self->thread_queue), &thread_len, &thread_msgs);
 
   if (self->on_close != NULL) self->on_close(self, main_len, main_msgs, thread_len, thread_msgs);
@@ -173,41 +177,41 @@ pearsync_on_close (uv_handle_t *handle) {
 
 void
 pearsync_init (pearsync_t *self) {
-  pearsync_queue_init(&(self->main_queue));
+  pearsync_queue_init(&(self->uv_queue));
   pearsync_queue_init(&(self->thread_queue));
 
   self->signal_thread = false;
-  self->main_status = 0;
+  self->uv_status = 0;
   self->thread_status = 0;
 
-  self->main_port.handle = self;
-  self->main_port.data = NULL;
-  self->main_port.is_main = true;
+  self->uv_port.handle = self;
+  self->uv_port.data = NULL;
+  self->uv_port.is_uv = true;
 
   self->thread_port.handle = self;
   self->thread_port.data = NULL;
-  self->thread_port.is_main = false;
+  self->thread_port.is_uv = false;
 }
 
 pearsync_port_t *
 pearsync_get_port_uv (pearsync_t *self) {
-  if (!(self->main_status & PEARSYNC_RECEIVING)) return NULL;
-  return &(self->main_port);
+  if (!(self->uv_status & PEARSYNC_RECEIVING)) return NULL;
+  return &(self->uv_port);
 }
 
 pearsync_port_t *
 pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_wakeup)(pearsync_port_t *self)) {
-  pearsync_queue_init(&(self->main_queue));
+  pearsync_queue_init(&(self->uv_queue));
   uv_async_init(loop, (uv_async_t *) self, pearsync_on_wakeup_uv);
 
-  self->on_wakeup_main = (void (*)(void *)) on_wakeup;
-  self->main_status |= PEARSYNC_RECEIVING;
+  self->on_wakeup_uv = (void (*)(void *)) on_wakeup;
+  self->uv_status |= PEARSYNC_RECEIVING;
 
   if (self->thread_status & PEARSYNC_RECEIVING) {
     uv_async_send((uv_async_t *) self);
   }
 
-  return &(self->main_port);
+  return &(self->uv_port);
 }
 
 pearsync_port_t *
@@ -224,7 +228,7 @@ pearsync_open_thread (pearsync_t *self, void (*on_signal_thread)(pearsync_port_t
   self->on_wakeup_thread = (void (*)(void *)) on_wakeup;
   self->thread_status |= PEARSYNC_RECEIVING;
 
-  if (self->main_status & PEARSYNC_RECEIVING) {
+  if (self->uv_status & PEARSYNC_RECEIVING) {
     uv_async_send((uv_async_t *) self);
   }
 
@@ -235,12 +239,12 @@ void
 pearsync_wakeup (pearsync_port_t *port) {
   pearsync_t *self = (pearsync_t *) port->handle;
 
-  if (port->is_main) { // just for completeness...
+  if (port->is_uv) { // just for completeness...
     pearsync_on_wakeup_uv((uv_async_t *) self);
     return;
   }
 
-  pearsync_queue_t *mq = &(self->main_queue);
+  pearsync_queue_t *mq = &(self->uv_queue);
   pearsync_queue_t *tq = &(self->thread_queue);
 
   if (mq->tail != mq->head) self->on_wakeup_thread(&(self->thread_port));
@@ -250,13 +254,13 @@ pearsync_wakeup (pearsync_port_t *port) {
 }
 
 static bool
-pearsync_thread_send (pearsync_t *self, pearsync_msg_t *m) {
+pearsync_thread_send (pearsync_t *self, pearsync_msg_t *m, bool force) {
   pearsync_queue_t *q = &(self->thread_queue);
 
   bool was_empty = q->head == q->tail;
 
-  if (!(self->thread_status & PEARSYNC_NEEDS_DRAIN) && pearsync_queue_push(q, m)) {
-    if (was_empty && self->main_status != 0) {
+  if ((force || !(self->thread_status & PEARSYNC_NEEDS_DRAIN)) && pearsync_queue_push(q, m)) {
+    if (was_empty && self->uv_status != 0) {
       uv_async_send((uv_async_t *) self);
     }
     return true;
@@ -268,12 +272,12 @@ pearsync_thread_send (pearsync_t *self, pearsync_msg_t *m) {
 }
 
 static bool
-pearsync_main_send (pearsync_t *self, pearsync_msg_t *m) {
-  pearsync_queue_t *q = &(self->main_queue);
+pearsync_uv_send (pearsync_t *self, pearsync_msg_t *m, bool force) {
+  pearsync_queue_t *q = &(self->uv_queue);
 
   bool skip_signal = (q->head != q->tail) && !self->signal_thread;
 
-  if (!(self->main_status & PEARSYNC_NEEDS_DRAIN) && pearsync_queue_push(q, m)) {
+  if ((force || !(self->uv_status & PEARSYNC_NEEDS_DRAIN)) && pearsync_queue_push(q, m)) {
     if (skip_signal) return true;
 
     if (self->thread_status != 0) {
@@ -285,7 +289,7 @@ pearsync_main_send (pearsync_t *self, pearsync_msg_t *m) {
     return true;
   }
 
-  self->main_status |= PEARSYNC_NEEDS_DRAIN;
+  self->uv_status |= PEARSYNC_NEEDS_DRAIN;
   pearsync_overflow_push(q, m);
   return false;
 }
@@ -293,11 +297,11 @@ pearsync_main_send (pearsync_t *self, pearsync_msg_t *m) {
 bool
 pearsync_send (pearsync_port_t *port, pearsync_msg_t *m) {
   pearsync_t *self = (pearsync_t *) port->handle;
-  return port->is_main ? pearsync_main_send(self, m) : pearsync_thread_send(self, m);
+  return port->is_uv ? pearsync_uv_send(self, m, false) : pearsync_thread_send(self, m, false);
 }
 
 static inline bool
-pearsync_main_recv (pearsync_t *self, pearsync_msg_t *m) {
+pearsync_recv_uv (pearsync_t *self, pearsync_msg_t *m) {
   pearsync_queue_t *q = &(self->thread_queue);
 
   bool res = pearsync_queue_shift(q, m);
@@ -311,12 +315,12 @@ pearsync_main_recv (pearsync_t *self, pearsync_msg_t *m) {
 }
 
 static inline bool
-pearsync_thread_recv (pearsync_t *self, pearsync_msg_t *m) {
-  pearsync_queue_t *q = &(self->main_queue);
+pearsync_recv_thread (pearsync_t *self, pearsync_msg_t *m) {
+  pearsync_queue_t *q = &(self->uv_queue);
 
   bool res = pearsync_queue_shift(q, m);
 
-  if ((self->main_status & PEARSYNC_NEEDS_DRAIN) && res && q->tail == q->head) {
+  if ((self->uv_status & PEARSYNC_NEEDS_DRAIN) && res && q->tail == q->head) {
     uv_async_send((uv_async_t *) self);
   }
 
@@ -326,13 +330,13 @@ pearsync_thread_recv (pearsync_t *self, pearsync_msg_t *m) {
 bool
 pearsync_recv (pearsync_port_t *port, pearsync_msg_t *m) {
   pearsync_t *self = (pearsync_t *) port->handle;
-  return port->is_main ? pearsync_main_recv(self, m) : pearsync_thread_recv(self, m);
+  return port->is_uv ? pearsync_recv_uv(self, m) : pearsync_recv_thread(self, m);
 }
 
 void
 pearsync_destroy (pearsync_t *self, void (*on_close)(pearsync_t *self, size_t main_len, pearsync_msg_t *main_msgs, size_t thread_len, pearsync_msg_t *thread_msgs)) {
   self->on_close = (void (*)(void *, size_t, pearsync_msg_t *, size_t, pearsync_msg_t *)) on_close;
 
-  if (self->main_status == 0) pearsync_on_close((uv_handle_t *) self);
+  if (self->uv_status == 0) pearsync_on_close((uv_handle_t *) self);
   else uv_close((uv_handle_t *) self, pearsync_on_close);
 }

@@ -27,25 +27,25 @@ typedef struct {
 typedef struct {
   void *handle;
   void *data;
-  bool is_main;
+  bool is_uv;
 } pearsync_port_t;
 
 typedef struct {
   uv_async_t async;
 
-  pearsync_queue_t main_queue;
+  pearsync_queue_t uv_queue;
   pearsync_queue_t thread_queue;
 
-  atomic_int main_status;
+  atomic_int uv_status;
   atomic_int thread_status;
 
-  pearsync_port_t main_port;
+  pearsync_port_t uv_port;
   pearsync_port_t thread_port;
 
   bool signal_thread;
 
   void (*on_signal_thread)(pearsync_port_t *);
-  void (*on_wakeup_main)(void *);
+  void (*on_wakeup_uv)(void *);
   void (*on_wakeup_thread)(void *);
 
   void (*on_close)(void *, size_t, pearsync_msg_t *, size_t, pearsync_msg_t *);
