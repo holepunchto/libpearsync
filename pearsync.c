@@ -154,7 +154,7 @@ pearsync_on_wakeup (uv_async_t *handle) {
 
 static void
 pearsync_on_close (uv_handle_t *handle) {
-  pearsync_t *a = (pearsync_t *) handle;
+  pearsync_t *self = (pearsync_t *) handle;
 
   pearsync_msg_t *main_msgs;
   size_t main_len;
@@ -162,10 +162,10 @@ pearsync_on_close (uv_handle_t *handle) {
   pearsync_msg_t *thread_msgs;
   size_t thread_len;
 
-  pearsync_clear(&(a->main_queue), &main_len, &main_msgs);
-  pearsync_clear(&(a->thread_queue), &thread_len, &thread_msgs);
+  pearsync_clear(&(self->main_queue), &main_len, &main_msgs);
+  pearsync_clear(&(self->thread_queue), &thread_len, &thread_msgs);
 
-  if (a->on_close != NULL) a->on_close(main_len, main_msgs, thread_len, thread_msgs);
+  if (self->on_close != NULL) self->on_close(self, main_len, main_msgs, thread_len, thread_msgs);
 
   if (main_msgs != NULL) free(main_msgs);
   if (thread_msgs != NULL) free(thread_msgs);
@@ -181,10 +181,17 @@ pearsync_init (pearsync_t *self) {
   self->thread_status = 0;
 
   self->main_port.handle = self;
+  self->main_port.data = NULL;
   self->main_port.is_main = true;
 
   self->thread_port.handle = self;
+  self->thread_port.data = NULL;
   self->thread_port.is_main = false;
+}
+
+pearsync_port_t *
+pearsync_port_uv (pearsync_t *self) {
+  return &(self->main_port);
 }
 
 pearsync_port_t *
@@ -200,6 +207,11 @@ pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_wakeup)(pearsync_
   }
 
   return &(self->main_port);
+}
+
+pearsync_port_t *
+pearsync_port (pearsync_t *self) {
+  return &(self->thread_port);
 }
 
 pearsync_port_t *
@@ -301,8 +313,8 @@ pearsync_recv (pearsync_port_t *port, pearsync_msg_t *m) {
 }
 
 void
-pearsync_destroy (pearsync_t *self, void (*on_close)(size_t main_len, pearsync_msg_t *main_msgs, size_t thread_len, pearsync_msg_t *thread_msgs)) {
-  self->on_close = on_close;
+pearsync_destroy (pearsync_t *self, void (*on_close)(pearsync_t *self, size_t main_len, pearsync_msg_t *main_msgs, size_t thread_len, pearsync_msg_t *thread_msgs)) {
+  self->on_close = (void (*)(void *, size_t, pearsync_msg_t *, size_t, pearsync_msg_t *)) on_close;
 
   if (self->main_status == 0) pearsync_on_close((uv_handle_t *) self);
   else uv_close((uv_handle_t *) self, pearsync_on_close);

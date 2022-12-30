@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <uv.h>
 
-#define PEARSYNC_QUEUE 8
+#define PEARSYNC_QUEUE 1024
 
 typedef struct {
   size_t len;
@@ -26,6 +26,7 @@ typedef struct {
 
 typedef struct {
   void *handle;
+  void *data;
   bool is_main;
 } pearsync_port_t;
 
@@ -45,7 +46,7 @@ typedef struct {
 
   void (*on_wakeup_main)(void *);
   void (*on_wakeup_thread)(void *);
-  void (*on_close)(size_t main_len, pearsync_msg_t *main_msgs, size_t thread_len, pearsync_msg_t *thread_msgs);
+  void (*on_close)(void *, size_t, pearsync_msg_t *, size_t, pearsync_msg_t *);
 } pearsync_t;
 
 void
@@ -57,6 +58,12 @@ pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_wakeup)(pearsync_
 pearsync_port_t *
 pearsync_open (pearsync_t *self, void (*on_wakeup)(pearsync_port_t *port));
 
+pearsync_port_t *
+pearsync_port_uv (pearsync_t *self);
+
+pearsync_port_t *
+pearsync_port (pearsync_t *self);
+
 bool
 pearsync_send (pearsync_port_t *port, pearsync_msg_t *m);
 
@@ -64,6 +71,6 @@ bool
 pearsync_recv (pearsync_port_t *port, pearsync_msg_t *m);
 
 void
-pearsync_destroy (pearsync_t *self, void (*on_close)(size_t main_len, pearsync_msg_t *main_msgs, size_t thread_len, pearsync_msg_t *thread_msgs));
+pearsync_destroy (pearsync_t *self, void (*on_close)(pearsync_t *self, size_t main_len, pearsync_msg_t *main_msgs, size_t thread_len, pearsync_msg_t *thread_msgs));
 
 #endif

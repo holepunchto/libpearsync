@@ -48,7 +48,7 @@ pearsync_destroy(&sync, on_close);
 
 // NOTE that this should only be called in one place AND any
 // calls after this is unsafe.
-// on_close is called with (uv_len, uv_msgs, len, msgs)
+// on_close is called with (pearsync, uv_len, uv_msgs, len, msgs)
 // which is all the pending messages so you can free them etc
 ```
 
