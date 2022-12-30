@@ -28,7 +28,7 @@ run_thread (void *data) {
   pearsync_t *a = (pearsync_t *) data;
 
   printf("i am a thread\n");
-  pearsync_open(a, on_wakeup_thread);
+  pearsync_open_thread(a, pearsync_wakeup, on_wakeup_thread);
 }
 
 int

@@ -10,6 +10,8 @@ Simple message passing between a libuv thread and something else.
 
 ## Usage
 
+See `example.c` for a fully runnable example
+
 ``` c
 // somewhere (but only in one place), init it
 pearsync_t sync;
@@ -19,7 +21,15 @@ pearsync_init(&sync);
 pearsync_port_t *uv_port = pearsync_open_uv(&sync, uv_loop, on_wakeup_uv);
 
 // then in the other thread call
-pearsync_port_t *port = pearsync_open(&sync, on_wakeup);
+pearsync_port_t *port = pearsync_open_thread(&sync, signal_thread, on_wakeup);
+
+// pearsync doesnt know how to signal your other thread, so you need to pass a function
+// signal_thread that does this for it, the signature of it is
+
+void signal_thread (pearsync_port_t *port) {
+  // ... somehow signal the other thread, and when so do
+  pearsync_wakeup(port);
+}
 
 // note that these two open calls are threadsafe!
 // the wakeup function is called when there is something to do (ie new messages)
