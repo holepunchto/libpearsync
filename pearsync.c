@@ -199,6 +199,11 @@ pearsync_get_port_uv (pearsync_t *self) {
   return &(self->uv_port);
 }
 
+uv_handle_t *
+pearsync_get_uv_handle (pearsync_t *self) {
+  return (uv_handle_t *) self;
+}
+
 pearsync_port_t *
 pearsync_open_uv (pearsync_t *self, uv_loop_t *loop, void (*on_recv)(pearsync_port_t *self)) {
   pearsync_queue_init(&(self->uv_queue));

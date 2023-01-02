@@ -66,6 +66,9 @@ pearsync_get_port_uv (pearsync_t *self);
 pearsync_port_t *
 pearsync_get_port_thread (pearsync_t *self);
 
+uv_handle_t *
+pearsync_get_uv_handle (pearsync_t *self);
+
 void
 pearsync_wakeup (pearsync_port_t *port);
 
