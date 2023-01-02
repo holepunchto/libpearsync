@@ -67,7 +67,7 @@ run_thread (void *data) {
       .data = malloc(32)
     };
 
-    m.len = sprintf(m.data, "hello uv #%i", 32 + i) + 1;
+    m.len = sprintf(m.data, "hello uv #%i", 64 + i) + 1;
 
     pearsync_send(p, &m);
   }
