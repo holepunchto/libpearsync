@@ -64,4 +64,4 @@ pearsync_destroy(&sync, on_close);
 
 ## License
 
-MIT
+Apache-2.0
